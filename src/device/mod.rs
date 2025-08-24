@@ -26,17 +26,17 @@ mod device_test;
 #[derive(Debug)]
 pub struct Device {
     handle: DeviceHandle,
-    vendor_id: u16,
-    product_id: u16,
+    manufacturer: String,
+    product: String,
 }
 
 impl Device {
     pub fn new(args: Args) -> Result<Device> {
-        let (handle, vendor_id, product_id) = DeviceHandle::open(args)?;
+        let (handle, manufacturer, product) = DeviceHandle::open(args)?;
         Ok(Device {
             handle,
-            vendor_id,
-            product_id,
+            manufacturer,
+            product,
         })
     }
 
@@ -54,14 +54,20 @@ impl Device {
         self.handle.read_product_string()
     }
 
-    /// Check if this is a specific dongle model by reading USB string descriptors
+    /// Get the stored manufacturer string
+    pub fn manufacturer(&self) -> &str {
+        &self.manufacturer
+    }
+
+    /// Get the stored product string
+    pub fn product(&self) -> &str {
+        &self.product
+    }
+
+    /// Check if this is a specific dongle model by comparing stored USB string descriptors
     pub fn check_dongle_model(&self, vendor: &str, product: &str) -> Result<bool> {
-        // Read manufacturer and product strings from USB device descriptors
-        let manufacturer = self.handle.read_manufacturer_string().unwrap_or_default();
-        let product_string = self.handle.read_product_string().unwrap_or_default();
-        
-        // Check if strings match the expected vendor and product
-        Ok(manufacturer == vendor && product_string == product)
+        // Use the stored manufacturer and product strings
+        Ok(self.manufacturer == vendor && self.product == product)
     }
 
     pub fn test_write(&mut self) -> Result<()> {
