@@ -3,14 +3,16 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 pub mod r820t;
+#[cfg(test)]
+mod r82xx_test;
+pub use r820t::R82xxVariant;
 use crate::device::Device;
 use crate::error::Result;
 use crate::TunerGain;
 
-pub const KNOWN_TUNERS: [TunerInfo; 1] = [r820t::TUNER_INFO];
+pub const KNOWN_TUNERS: [TunerInfo; 2] = [r820t::TUNER_INFO, r820t::R828D_TUNER_INFO];
 
-#[derive(Debug, Clone, Copy)]
-
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TunerInfo {
     pub id: &'static str,
     pub name: &'static str,

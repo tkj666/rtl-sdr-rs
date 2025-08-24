@@ -9,7 +9,7 @@ use crate::device::{
 };
 use crate::error::Result;
 use crate::error::RtlsdrError::RtlsdrErr;
-use crate::tuners::r820t::{R820T, R82XX_IF_FREQ, TUNER_ID};
+use crate::tuners::r820t::{R820T, R82XX_IF_FREQ, TUNER_ID, R828D_TUNER_ID};
 use crate::tuners::{NoTuner, Tuner, KNOWN_TUNERS};
 use log::{error, info};
 
@@ -41,6 +41,10 @@ pub struct RtlSdr {
     force_bt: bool,
     force_ds: bool,
     fir: [i32; FIR_LEN],
+}
+
+fn is_r82xx_tuner(tuner_id: &str) -> bool {
+    tuner_id == TUNER_ID || tuner_id == R828D_TUNER_ID
 }
 
 impl RtlSdr {
@@ -81,6 +85,7 @@ impl RtlSdr {
             };
             match tuner_id {
                 TUNER_ID => Box::new(R820T::new(&mut self.handle)),
+                R828D_TUNER_ID => Box::new(R820T::new_r828d(&mut self.handle)),
                 _ => panic!("Unable to find recognized tuner"),
             }
         };
@@ -228,7 +233,7 @@ impl RtlSdr {
         let val = if self.bw > 0 { self.bw } else { self.rate };
         self.tuner.set_bandwidth(&self.handle, val, self.rate)?;
         self.set_i2c_repeater(false)?;
-        if self.tuner.get_info()?.id == TUNER_ID {
+        if is_r82xx_tuner(self.tuner.get_info()?.id) {
             self.set_if_freq(self.tuner.get_if_freq()?)?;
             self.set_center_freq(self.freq)?;
         }
@@ -256,7 +261,7 @@ impl RtlSdr {
         self.set_i2c_repeater(true)?;
         self.tuner.set_bandwidth(&self.handle, bw, self.rate)?;
         self.set_i2c_repeater(false)?;
-        if self.tuner.get_info()?.id == TUNER_ID {
+        if is_r82xx_tuner(self.tuner.get_info()?.id) {
             self.set_if_freq(self.tuner.get_if_freq()?)?;
             self.set_center_freq(self.freq)?;
         }
@@ -310,7 +315,7 @@ impl RtlSdr {
                 self.tuner.init(&self.handle)?;
                 self.set_i2c_repeater(false)?;
 
-                if self.tuner.get_info()?.id == TUNER_ID {
+                if is_r82xx_tuner(self.tuner.get_info()?.id) {
                     // tuner init already does all this
                     // self.set_if_freq(R82XX_IF_FREQ);
                     // Enable spectrum inversion
