@@ -399,7 +399,7 @@ impl Tuner for R820T {
 
         // R828D needs crystal check during initialization
         if self.variant.needs_xtal_check() {
-            let xtal_cap = self._xtal_check(handle)?;
+            let xtal_cap = self.xtal_check(handle)?;
             self.xtal_cap_sel = match xtal_cap {
                 0x0b => XtalCapValue::XtalLowCap30p,
                 0x02 => XtalCapValue::XtalLowCap20p,
@@ -1011,7 +1011,7 @@ impl R820T {
         Ok(())
     }
 
-    fn _xtal_check(&mut self, handle: &Device) -> Result<u8> {
+    fn xtal_check(&mut self, handle: &Device) -> Result<u8> {
         let mut data: [u8; 3] = [0; 3];
 
         // Initialize register cache
