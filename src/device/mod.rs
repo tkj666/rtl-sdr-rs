@@ -44,33 +44,24 @@ impl Device {
         Ok(self.handle.claim_interface(iface)?)
     }
 
-    /// Check if this is a specific dongle model by reading EEPROM strings
-    pub fn check_dongle_model(&self, vendor: &str, product: &str) -> Result<bool> {
-        // For RTL-SDR Blog V4, check if vendor matches "RTLSDRBlog" and product matches "Blog V4"
-        match self.read_eeprom_string() {
-            Ok(eeprom_data) => {
-                let eeprom_str = String::from_utf8_lossy(&eeprom_data);
-                Ok(eeprom_str.contains(vendor) && eeprom_str.contains(product))
-            }
-            Err(_) => Ok(false), // If we can't read EEPROM, assume it's not the target model
-        }
+    /// Read manufacturer string from USB device descriptor
+    pub fn read_manufacturer_string(&self) -> Result<String> {
+        self.handle.read_manufacturer_string()
     }
 
-    /// Read EEPROM data to get device strings
-    fn read_eeprom_string(&self) -> Result<Vec<u8>> {
-        // Read manufacturer and product strings from EEPROM
-        // EEPROM layout: offset 0x09-0x0A contains string descriptor lengths
-        let mut eeprom_data = Vec::new();
+    /// Read product string from USB device descriptor
+    pub fn read_product_string(&self) -> Result<String> {
+        self.handle.read_product_string()
+    }
+
+    /// Check if this is a specific dongle model by reading USB string descriptors
+    pub fn check_dongle_model(&self, vendor: &str, product: &str) -> Result<bool> {
+        // Read manufacturer and product strings from USB device descriptors
+        let manufacturer = self.handle.read_manufacturer_string().unwrap_or_default();
+        let product_string = self.handle.read_product_string().unwrap_or_default();
         
-        // Read first 128 bytes of EEPROM where strings are typically located
-        for addr in 0x00..0x80 {
-            match self.read_reg(BLOCK_ROM, EEPROM_ADDR + addr, 1) {
-                Ok(data) => eeprom_data.push(data as u8),
-                Err(_) => break, // Stop on read error
-            }
-        }
-        
-        Ok(eeprom_data)
+        // Check if strings match the expected vendor and product
+        Ok(manufacturer == vendor && product_string == product)
     }
 
     pub fn test_write(&mut self) -> Result<()> {

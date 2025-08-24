@@ -40,5 +40,8 @@ mock! {
             timeout: Duration,
         ) -> Result<usize>;
 
+        pub fn read_manufacturer_string(&self) -> Result<String>;
+        pub fn read_product_string(&self) -> Result<String>;
+
     }
 }
