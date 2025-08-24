@@ -26,17 +26,51 @@ mod device_test;
 #[derive(Debug)]
 pub struct Device {
     handle: DeviceHandle,
+    vendor_id: u16,
+    product_id: u16,
 }
 
 impl Device {
     pub fn new(args: Args) -> Result<Device> {
+        let (handle, vendor_id, product_id) = DeviceHandle::open(args)?;
         Ok(Device {
-            handle: DeviceHandle::open(args)?,
+            handle,
+            vendor_id,
+            product_id,
         })
     }
 
     pub fn claim_interface(&mut self, iface: u8) -> Result<()> {
         Ok(self.handle.claim_interface(iface)?)
+    }
+
+    /// Check if this is a specific dongle model by reading EEPROM strings
+    pub fn check_dongle_model(&self, vendor: &str, product: &str) -> Result<bool> {
+        // For RTL-SDR Blog V4, check if vendor matches "RTLSDRBlog" and product matches "Blog V4"
+        match self.read_eeprom_string() {
+            Ok(eeprom_data) => {
+                let eeprom_str = String::from_utf8_lossy(&eeprom_data);
+                Ok(eeprom_str.contains(vendor) && eeprom_str.contains(product))
+            }
+            Err(_) => Ok(false), // If we can't read EEPROM, assume it's not the target model
+        }
+    }
+
+    /// Read EEPROM data to get device strings
+    fn read_eeprom_string(&self) -> Result<Vec<u8>> {
+        // Read manufacturer and product strings from EEPROM
+        // EEPROM layout: offset 0x09-0x0A contains string descriptor lengths
+        let mut eeprom_data = Vec::new();
+        
+        // Read first 128 bytes of EEPROM where strings are typically located
+        for addr in 0x00..0x80 {
+            match self.read_reg(BLOCK_ROM, EEPROM_ADDR + addr, 1) {
+                Ok(data) => eeprom_data.push(data as u8),
+                Err(_) => break, // Stop on read error
+            }
+        }
+        
+        Ok(eeprom_data)
     }
 
     pub fn test_write(&mut self) -> Result<()> {

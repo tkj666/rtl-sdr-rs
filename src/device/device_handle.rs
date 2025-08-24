@@ -16,18 +16,18 @@ pub struct DeviceHandle {
     handle: rusb::DeviceHandle<Context>,
 }
 impl DeviceHandle {
-    pub fn open(args: Args) -> Result<Self> {
+    pub fn open(args: Args) -> Result<(Self, u16, u16)> {
         let mut context = Context::new()?;
-        let handle = match args {
+        let (handle, vendor_id, product_id) = match args {
             Args::Index(index) => DeviceHandle::open_device(&mut context, index)?,
             Args::Fd(fd) => DeviceHandle::open_device_with_fd(&mut context, fd)?,
         };
-        Ok(DeviceHandle { handle: handle })
+        Ok((DeviceHandle { handle }, vendor_id, product_id))
     }
     pub fn open_device<T: UsbContext>(
         context: &mut T,
         index: usize,
-    ) -> Result<rusb::DeviceHandle<T>> {
+    ) -> Result<(rusb::DeviceHandle<T>, u16, u16)> {
         let devices = context.devices().map_err(|e| {
             info!("Failed to get devices: {:?}", e);  // Logging with info!
             RtlsdrErr(format!("Error: {:?}", e))
@@ -54,7 +54,9 @@ impl DeviceHandle {
     
                     if device_count == index {
                         info!("Opening device at index {}", index);  // Logging with info!
-                        return found.open().map_err(|e| {
+                        return found.open().map(|handle| {
+                            (handle, device_desc.vendor_id(), device_desc.product_id())
+                        }).map_err(|e| {
                             info!("Failed to open device: {:?}", e);  // Logging with info!
                             RtlsdrErr(format!("Error: {:?}", e))
                         });
@@ -79,13 +81,17 @@ impl DeviceHandle {
     pub fn open_device_with_fd<T: UsbContext>(
         context: &mut T,
         fd: i32,
-    ) -> Result<rusb::DeviceHandle<T>> {
+    ) -> Result<(rusb::DeviceHandle<T>, u16, u16)> {
         use std::os::unix::io::RawFd;
         
         info!("Opening device with file descriptor {}", fd);
         
         unsafe {
-            context.open_device_with_fd(fd as RawFd).map_err(|e| {
+            context.open_device_with_fd(fd as RawFd).map(|handle| {
+                // For fd-based devices, we can't easily get vendor/product info
+                // Use generic RTL2832U values as defaults
+                (handle, 0x0bda, 0x2832)
+            }).map_err(|e| {
                 info!("Failed to open device with fd {}: {:?}", fd, e);
                 RtlsdrErr(format!("Error opening device with fd {}: {:?}", fd, e))
             })
@@ -96,7 +102,7 @@ impl DeviceHandle {
     pub fn open_device_with_fd<T: UsbContext>(
         _context: &mut T,
         _fd: i32,
-    ) -> Result<rusb::DeviceHandle<T>> {
+    ) -> Result<(rusb::DeviceHandle<T>, u16, u16)> {
         Err(RtlsdrErr("File descriptor opening is only supported on Unix systems".to_string()))
     }
     

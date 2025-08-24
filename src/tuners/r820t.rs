@@ -500,12 +500,38 @@ impl Tuner for R820T {
 
     fn set_freq(&mut self, handle: &Device, freq: u32) -> Result<()> {
         info!("set_freq - freq: {}", freq);
-        let lo_freq = freq + self.int_freq;
+        
+        // Check if this is RTL-SDR Blog V4 dongle for special handling
+        let is_rtlsdr_blog_v4 = handle.check_dongle_model("RTLSDRBlog", "Blog V4").unwrap_or(false);
+        
+        // For RTL-SDR Blog V4, automatically upconvert by 28.8 MHz if tuning to HF
+        // so that we don't need to manually set any upconvert offset in the SDR software
+        let upconvert_freq = if is_rtlsdr_blog_v4 && freq < 28_800_000 {
+            freq + 28_800_000
+        } else {
+            freq
+        };
+        
+        let lo_freq = upconvert_freq + self.int_freq;
         info!("set_freq - lo_freq: {}", lo_freq);
+        
         self.set_mux(handle, lo_freq)?;
         self.set_pll(handle, lo_freq)?;
+        
+        // Check if PLL has lock (set_pll should have updated has_lock)
+        if !self.has_lock {
+            return Err(RtlsdrErr("PLL failed to lock".to_string()));
+        }
+        
+        // RTL-SDR Blog V4 specific: determine if notch filters should be on or off
+        // Notches are turned OFF when tuned within the notch band and ON when tuned outside
+        if is_rtlsdr_blog_v4 {
+            let open_d = self.calculate_notch_filters(freq)?;
+            
+            // Apply notch filter settings by updating register 0x17 (R23)
+            self.write_reg_mask(handle, 0x17, open_d, 0x08)?;
+        }
 
-        // TODO: Some extra stuff for the 828D tuner when we support that
         Ok(())
     }
 
@@ -1115,6 +1141,31 @@ impl R820T {
         reg = reg - RW_REG_START;
         assert!(reg + val.len() <= NUM_CACHE_REGS);
         self.regs[reg..reg + val.len()].copy_from_slice(val);
+    }
+
+    /// Calculate notch filter settings for RTL-SDR Blog V4
+    /// Returns the open_d value to be applied to register 0x17
+    fn calculate_notch_filters(&self, freq: u32) -> Result<u8> {
+        // RTL-SDR Blog V4 notch filter frequencies (in Hz)
+        // These are frequencies where notches should be turned OFF (open_d = 0x08)
+        // Outside these ranges, notches are turned ON (open_d = 0x00)
+        
+        let notch_bands = [
+            (88_000_000, 108_000_000),    // FM broadcast band
+            (170_000_000, 230_000_000),   // VHF band III
+            (470_000_000, 862_000_000),   // UHF TV band
+        ];
+        
+        // Check if frequency is within any notch band
+        for (start, end) in &notch_bands {
+            if freq >= *start && freq <= *end {
+                // Frequency is within notch band - turn notches OFF
+                return Ok(0x08);
+            }
+        }
+        
+        // Frequency is outside notch bands - turn notches ON  
+        Ok(0x00)
     }
 }
 
