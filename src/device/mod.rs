@@ -32,7 +32,14 @@ pub struct Device {
 
 impl Device {
     pub fn new(args: Args) -> Result<Device> {
-        let (handle, manufacturer, product) = DeviceHandle::open(args)?;
+        let handle = DeviceHandle::open(args)?;
+        
+        // Read manufacturer and product strings from the opened device handle
+        let manufacturer = handle.read_manufacturer_string()
+            .unwrap_or_else(|_| "Unknown".to_string());
+        let product = handle.read_product_string()
+            .unwrap_or_else(|_| "Unknown".to_string());
+        
         Ok(Device {
             handle,
             manufacturer,
