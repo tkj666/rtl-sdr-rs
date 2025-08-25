@@ -26,17 +26,55 @@ mod device_test;
 #[derive(Debug)]
 pub struct Device {
     handle: DeviceHandle,
+    manufacturer: String,
+    product: String,
 }
 
 impl Device {
     pub fn new(args: Args) -> Result<Device> {
+        let handle = DeviceHandle::open(args)?;
+        
+        // Read manufacturer and product strings from the opened device handle
+        let manufacturer = handle.read_manufacturer_string()
+            .unwrap_or_else(|_| "Unknown".to_string());
+        let product = handle.read_product_string()
+            .unwrap_or_else(|_| "Unknown".to_string());
+        
         Ok(Device {
-            handle: DeviceHandle::open(args)?,
+            handle,
+            manufacturer,
+            product,
         })
     }
 
     pub fn claim_interface(&mut self, iface: u8) -> Result<()> {
         Ok(self.handle.claim_interface(iface)?)
+    }
+
+    /// Read manufacturer string from USB device descriptor
+    pub fn read_manufacturer_string(&self) -> Result<String> {
+        self.handle.read_manufacturer_string()
+    }
+
+    /// Read product string from USB device descriptor
+    pub fn read_product_string(&self) -> Result<String> {
+        self.handle.read_product_string()
+    }
+
+    /// Get the stored manufacturer string
+    pub fn manufacturer(&self) -> &str {
+        &self.manufacturer
+    }
+
+    /// Get the stored product string
+    pub fn product(&self) -> &str {
+        &self.product
+    }
+
+    /// Check if this is a specific dongle model by comparing stored USB string descriptors
+    pub fn check_dongle_model(&self, vendor: &str, product: &str) -> Result<bool> {
+        // Use the stored manufacturer and product strings
+        Ok(self.manufacturer == vendor && self.product == product)
     }
 
     pub fn test_write(&mut self) -> Result<()> {

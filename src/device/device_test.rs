@@ -36,6 +36,8 @@ fn test_read_reg_u8() {
         });
     let device = Device {
         handle: mock_handle,
+        manufacturer: "Realtek".to_string(),
+        product: "RTL2832U".to_string(),
     };
     let result = device.read_reg(block, addr, 1).unwrap();
     assert_eq!(data_expected, result);
@@ -68,6 +70,8 @@ fn test_read_reg_u16() {
         });
     let device = Device {
         handle: mock_handle,
+        manufacturer: "Realtek".to_string(),
+        product: "RTL2832U".to_string(),
     };
     let result = device.read_reg(block, addr, 2).unwrap();
     assert_eq!(u16::from_le_bytes(data_expected), result);
@@ -99,6 +103,8 @@ fn test_write_reg_u8() {
         });
     let device = Device {
         handle: mock_handle,
+        manufacturer: "Realtek".to_string(),
+        product: "RTL2832U".to_string(),
     };
     let result = device.write_reg(block, addr, data_expected, 1).unwrap();
     assert_eq!(1, result);
@@ -130,6 +136,8 @@ fn test_write_reg_u16() {
         });
     let device = Device {
         handle: mock_handle,
+        manufacturer: "Realtek".to_string(),
+        product: "RTL2832U".to_string(),
     };
     let result = device.write_reg(block, addr, data_expected, 2).unwrap();
     assert_eq!(1, result);
@@ -159,6 +167,8 @@ fn test_demod_read_reg() {
         });
     let device = Device {
         handle: mock_handle,
+        manufacturer: "Realtek".to_string(),
+        product: "RTL2832U".to_string(),
     };
     let result = device.demod_read_reg(page, addr).unwrap();
     assert_eq!(value as u16, result);
@@ -170,6 +180,8 @@ fn test_read_eeprom_out_of_range() {
     let mock_handle = MockDeviceHandle::new();
     let device = Device {
         handle: mock_handle,
+        manufacturer: "Realtek".to_string(),
+        product: "RTL2832U".to_string(),
     };
     let mut data = [0; 5];
     // Try to read more than eeprom size - should panic
@@ -209,6 +221,8 @@ fn test_read_eeprom_reads_expected_data() {
 
     let device = Device {
         handle: mock_handle,
+        manufacturer: "Realtek".to_string(),
+        product: "RTL2832U".to_string(),
     };
     let mut data = [0; 5];
     let data_len = data.len();
@@ -249,6 +263,8 @@ fn test_read_eeprom_partial_read() {
 
     let device = Device {
         handle: mock_handle,
+        manufacturer: "Realtek".to_string(),
+        product: "RTL2832U".to_string(),
     };
     let mut data = [0; 2];
     let data_len = data.len();
@@ -289,6 +305,8 @@ fn test_read_eeprom_larger_buffer() {
 
     let device = Device {
         handle: mock_handle,
+        manufacturer: "Realtek".to_string(),
+        product: "RTL2832U".to_string(),
     };
     let mut data = [0xFF; 4];
     device.read_eeprom(&mut data, 0, 2).unwrap();  // Reading only 2 bytes
@@ -302,6 +320,8 @@ fn test_read_eeprom_invalid_offset() {
     let mock_handle = MockDeviceHandle::new();
     let device = Device {
         handle: mock_handle,
+        manufacturer: "Realtek".to_string(),
+        product: "RTL2832U".to_string(),
     };
     let mut data = [0; 5];
     let data_len = data.len();

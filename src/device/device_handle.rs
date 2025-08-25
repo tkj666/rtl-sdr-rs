@@ -8,7 +8,7 @@ use crate::Args;
 use crate::error::Result;
 use crate::error::RtlsdrError::RtlsdrErr;
 use rusb::{Context, UsbContext};
-use log::{error, info};
+use log::info;
 
 use super::KNOWN_DEVICES;
 #[derive(Debug)]
@@ -22,7 +22,7 @@ impl DeviceHandle {
             Args::Index(index) => DeviceHandle::open_device(&mut context, index)?,
             Args::Fd(fd) => DeviceHandle::open_device_with_fd(&mut context, fd)?,
         };
-        Ok(DeviceHandle { handle: handle })
+        Ok(DeviceHandle { handle })
     }
     pub fn open_device<T: UsbContext>(
         context: &mut T,
@@ -137,5 +137,21 @@ impl DeviceHandle {
 
     pub fn read_bulk(&self, endpoint: u8, buf: &mut [u8], timeout: Duration) -> Result<usize> {
         Ok(self.handle.read_bulk(endpoint, buf, timeout)?)
+    }
+
+    /// Read manufacturer string from USB device descriptor
+    pub fn read_manufacturer_string(&self) -> Result<String> {
+        match self.handle.read_manufacturer_string_ascii(&self.handle.device().device_descriptor()?) {
+            Ok(s) => Ok(s),
+            Err(e) => Err(RtlsdrErr(format!("Failed to read manufacturer string: {:?}", e)))
+        }
+    }
+
+    /// Read product string from USB device descriptor
+    pub fn read_product_string(&self) -> Result<String> {
+        match self.handle.read_product_string_ascii(&self.handle.device().device_descriptor()?) {
+            Ok(s) => Ok(s),
+            Err(e) => Err(RtlsdrErr(format!("Failed to read product string: {:?}", e)))
+        }
     }
 }

@@ -9,7 +9,7 @@ use crate::error::RtlsdrError::RtlsdrErr;
 use log::info;
 
 const R820T_I2C_ADDR: u16 = 0x34;
-// const R828D_I2C_ADDR: u8 = 0x74; for now only support the T
+const R828D_I2C_ADDR: u16 = 0x74;
 const VER_NUM: u8 = 49;
 pub const R82XX_IF_FREQ: u32 = 3570000;
 const NUM_REGS: usize = 32;
@@ -256,8 +256,55 @@ enum TunerType {
     TunerDigitalTv,
 }
 
-#[derive(Debug)]
-#[allow(dead_code)]
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum R82xxVariant {
+    R820T,
+    R828D,
+}
+
+impl R82xxVariant {
+    pub fn i2c_addr(&self) -> u16 {
+        match self {
+            R82xxVariant::R820T => R820T_I2C_ADDR,
+            R82xxVariant::R828D => R828D_I2C_ADDR,
+        }
+    }
+
+    pub fn vco_power_ref(&self) -> u8 {
+        match self {
+            R82xxVariant::R820T => 2,
+            R82xxVariant::R828D => 1,
+        }
+    }
+
+    pub fn needs_xtal_check(&self) -> bool {
+        match self {
+            R82xxVariant::R820T => false,
+            R82xxVariant::R828D => true,
+        }
+    }
+
+    pub fn tuner_info(&self) -> TunerInfo {
+        match self {
+            R82xxVariant::R820T => TunerInfo {
+                id: "r820t",
+                name: "Rafael Micro R820T",
+                i2c_addr: R820T_I2C_ADDR as u8,
+                check_addr: 0x00,
+                check_val: 0x69,
+            },
+            R82xxVariant::R828D => TunerInfo {
+                id: "r828d",
+                name: "Rafael Micro R828D",
+                i2c_addr: R828D_I2C_ADDR as u8,
+                check_addr: 0x00,
+                check_val: 0x69,
+            },
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
 enum XtalCapValue {
     XtalLowCap30p,
     XtalLowCap20p,
@@ -285,6 +332,7 @@ enum DeliverySystem {
 
 #[derive(Debug)]
 pub struct R820T {
+    variant: R82xxVariant,
     pub info: TunerInfo,
     regs: [u8; NUM_CACHE_REGS],
     pub freq: u32,
@@ -298,6 +346,7 @@ pub struct R820T {
 }
 
 pub const TUNER_ID: &str = "r820t";
+pub const R828D_TUNER_ID: &str = "r828d";
 
 pub const TUNER_INFO: TunerInfo = TunerInfo {
     id: TUNER_ID,
@@ -305,16 +354,26 @@ pub const TUNER_INFO: TunerInfo = TunerInfo {
     i2c_addr: 0x34,
     check_addr: 0x00,
     check_val: 0x69,
-    // gains: vec![
-    //     0, 9, 14, 27, 37, 77, 87, 125, 144, 157, 166, 197, 207, 229, 254, 280, 297, 328, 338, 364,
-    //     372, 386, 402, 421, 434, 439, 445, 480, 496,
-    // ],
+};
+
+pub const R828D_TUNER_INFO: TunerInfo = TunerInfo {
+    id: R828D_TUNER_ID,
+    name: "Rafael Micro R828D",
+    i2c_addr: 0x74,
+    check_addr: 0x00,
+    check_val: 0x69,
 };
 
 impl R820T {
     pub fn new(_handle: &mut Device) -> R820T {
+        Self::new_with_variant(_handle, R82xxVariant::R820T)
+    }
+
+    pub fn new_with_variant(_handle: &mut Device, variant: R82xxVariant) -> R820T {
+        let info = variant.tuner_info();
         let tuner = R820T {
-            info: TUNER_INFO,
+            variant,
+            info,
             regs: REG_INIT,
             freq: 0,
             int_freq: 0,
@@ -327,16 +386,30 @@ impl R820T {
         };
         tuner
     }
+
+    pub fn new_r828d(_handle: &mut Device) -> R820T {
+        Self::new_with_variant(_handle, R82xxVariant::R828D)
+    }
 }
 
 impl Tuner for R820T {
     // Combined from r820t_init and r82xx_init
     fn init(&mut self, handle: &Device) -> Result<()> {
-        // TODO: set different I2C address and rafael_chip for R828D
         self.use_predetect = false;
 
-        // <original>TODO: R828D might need r82xx_xtal_check()
-        self.xtal_cap_sel = XtalCapValue::XtalHighCap0p;
+        // R828D needs crystal check during initialization
+        if self.variant.needs_xtal_check() {
+            let xtal_cap = self.xtal_check(handle)?;
+            self.xtal_cap_sel = match xtal_cap {
+                0x0b => XtalCapValue::XtalLowCap30p,
+                0x02 => XtalCapValue::XtalLowCap20p,
+                0x01 => XtalCapValue::XtalLowCap10p,
+                0x00 => XtalCapValue::XtalLowCap0p,
+                _ => XtalCapValue::XtalHighCap0p,
+            };
+        } else {
+            self.xtal_cap_sel = XtalCapValue::XtalHighCap0p;
+        }
 
         // Initialize registers
         self.write_regs(handle, 0x05, &REG_INIT)?;
@@ -427,12 +500,38 @@ impl Tuner for R820T {
 
     fn set_freq(&mut self, handle: &Device, freq: u32) -> Result<()> {
         info!("set_freq - freq: {}", freq);
-        let lo_freq = freq + self.int_freq;
+        
+        // Check if this is RTL-SDR Blog V4 dongle for special handling
+        let is_rtlsdr_blog_v4 = handle.check_dongle_model("RTLSDRBlog", "Blog V4").unwrap_or(false);
+        
+        // For RTL-SDR Blog V4, automatically upconvert by 28.8 MHz if tuning to HF
+        // so that we don't need to manually set any upconvert offset in the SDR software
+        let upconvert_freq = if is_rtlsdr_blog_v4 && freq < 28_800_000 {
+            freq + 28_800_000
+        } else {
+            freq
+        };
+        
+        let lo_freq = upconvert_freq + self.int_freq;
         info!("set_freq - lo_freq: {}", lo_freq);
+        
         self.set_mux(handle, lo_freq)?;
         self.set_pll(handle, lo_freq)?;
+        
+        // Check if PLL has lock (set_pll should have updated has_lock)
+        if !self.has_lock {
+            return Err(RtlsdrErr("PLL failed to lock".to_string()));
+        }
+        
+        // RTL-SDR Blog V4 specific: determine if notch filters should be on or off
+        // Notches are turned OFF when tuned within the notch band and ON when tuned outside
+        if is_rtlsdr_blog_v4 {
+            let open_d = self.calculate_notch_filters(freq)?;
+            
+            // Apply notch filter settings by updating register 0x17 (R23)
+            self.write_reg_mask(handle, 0x17, open_d, 0x08)?;
+        }
 
-        // TODO: Some extra stuff for the 828D tuner when we support that
         Ok(())
     }
 
@@ -615,8 +714,7 @@ impl R820T {
 
         let mut data: [u8; 5] = [0; 5];
         self.read_reg(handle, 0x00, &mut data, 5)?;
-        // TODO: if chip is R828D set vco_power_ref = 1
-        let vco_power_ref = 2;
+        let vco_power_ref = self.variant.vco_power_ref();
         let vco_fine_tune = (data[4] & 0x30) >> 4;
         if vco_fine_tune > vco_power_ref {
             div_num = div_num - 1;
@@ -939,7 +1037,7 @@ impl R820T {
         Ok(())
     }
 
-    fn _xtal_check(&mut self, handle: &Device) -> Result<u8> {
+    fn xtal_check(&mut self, handle: &Device) -> Result<u8> {
         let mut data: [u8; 3] = [0; 3];
 
         // Initialize register cache
@@ -1013,7 +1111,7 @@ impl R820T {
             let mut buf: Vec<u8> = vec![0; size + 1];
             buf[0] = reg_index as u8;
             buf[1..].copy_from_slice(&val[val_index..val_index + size]);
-            handle.i2c_write(R820T_I2C_ADDR, &buf)?;
+            handle.i2c_write(self.variant.i2c_addr(), &buf)?;
             val_index += size;
             reg_index += size;
             len -= size;
@@ -1027,8 +1125,8 @@ impl R820T {
     // (r82xx_read)
     fn read_reg(&self, handle: &Device, reg: usize, buf: &mut [u8], len: u8) -> Result<()> {
         assert!(buf.len() >= len as usize);
-        handle.i2c_write(R820T_I2C_ADDR, &[reg as u8])?;
-        handle.i2c_read(R820T_I2C_ADDR, buf, len)?;
+        handle.i2c_write(self.variant.i2c_addr(), &[reg as u8])?;
+        handle.i2c_read(self.variant.i2c_addr(), buf, len)?;
         // Need to reverse each byte...for some reason?
         for i in 0..buf.len() {
             buf[i] = bit_reverse(buf[i]);
@@ -1043,6 +1141,31 @@ impl R820T {
         reg = reg - RW_REG_START;
         assert!(reg + val.len() <= NUM_CACHE_REGS);
         self.regs[reg..reg + val.len()].copy_from_slice(val);
+    }
+
+    /// Calculate notch filter settings for RTL-SDR Blog V4
+    /// Returns the open_d value to be applied to register 0x17
+    fn calculate_notch_filters(&self, freq: u32) -> Result<u8> {
+        // RTL-SDR Blog V4 notch filter frequencies (in Hz)
+        // These are frequencies where notches should be turned OFF (open_d = 0x08)
+        // Outside these ranges, notches are turned ON (open_d = 0x00)
+        
+        let notch_bands = [
+            (88_000_000, 108_000_000),    // FM broadcast band
+            (170_000_000, 230_000_000),   // VHF band III
+            (470_000_000, 862_000_000),   // UHF TV band
+        ];
+        
+        // Check if frequency is within any notch band
+        for (start, end) in &notch_bands {
+            if freq >= *start && freq <= *end {
+                // Frequency is within notch band - turn notches OFF
+                return Ok(0x08);
+            }
+        }
+        
+        // Frequency is outside notch bands - turn notches ON  
+        Ok(0x00)
     }
 }
 
