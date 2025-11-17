@@ -25,6 +25,7 @@ pub trait Tuner: std::fmt::Debug {
     fn get_info(&self) -> Result<TunerInfo>;
     fn get_gains(&self) -> Result<Vec<i32>>;
     fn read_gain(&self, handle: &Device) -> Result<i32>;
+    fn get_gain(&self) -> Result<TunerGain>;
     fn set_gain(&mut self, handle: &Device, gain: TunerGain) -> Result<()>;
     fn set_freq(&mut self, handle: &Device, freq: u32) -> Result<()>;
     fn set_bandwidth(&mut self, handle: &Device, bw: u32, rate: u32) -> Result<()>;
@@ -53,6 +54,9 @@ impl Tuner for NoTuner {
     }
     fn read_gain(&self, _handle: &Device) -> Result<i32> {
         Ok(0)
+    }
+    fn get_gain(&self) -> Result<TunerGain> {
+        Ok(TunerGain::Manual(0))
     }
     fn set_gain(&mut self, _handle: &Device, _gain: TunerGain) -> Result<()> {
         Ok(())

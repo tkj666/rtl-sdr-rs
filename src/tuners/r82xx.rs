@@ -322,6 +322,7 @@ pub struct R82xx {
     i2c_addr: u16,
     is_blog_v4: bool,
     last_input_sel: Option<TunerInput>,
+    gain: TunerGain,
 }
 
 pub const R820T_TUNER_ID: &str = "r820t";
@@ -370,6 +371,7 @@ impl R82xx {
             },
             is_blog_v4,
             last_input_sel: None,
+            gain: TunerGain::Manual(0),
         }
     }
 }
@@ -413,7 +415,12 @@ impl Tuner for R82xx {
         Ok(gain as i32)
     }
 
+    fn get_gain(&self) -> Result<TunerGain> {
+        Ok(self.gain)
+    }
+
     fn set_gain(&mut self, handle: &Device, mode: TunerGain) -> Result<()> {
+        self.gain = mode;
         match mode {
             TunerGain::Auto => {
                 // LNA

@@ -29,7 +29,7 @@ pub enum DeviceId {
     Fd(i32),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum TunerGain {
     Auto,
     Manual(i32),
@@ -79,6 +79,9 @@ impl RtlSdr {
     }
     pub fn get_tuner_gains(&self) -> Result<Vec<i32>> {
         self.sdr.get_tuner_gains()
+    }
+    pub fn get_tuner_gain(&self) -> Result<TunerGain> {
+        self.sdr.get_tuner_gain()
     }
     pub fn set_tuner_gain(&mut self, gain: TunerGain) -> Result<()> {
         self.sdr.set_tuner_gain(gain)
